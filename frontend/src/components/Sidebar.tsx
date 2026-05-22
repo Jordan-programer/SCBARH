@@ -18,14 +18,14 @@ const navItems: NavItem[] = [
   { key: 'nav-dashboard', label: 'Dashboard', href: '/administrative-dashboard', icon: 'ChartBarSquareIcon', group: 'Principal' },
   { key: 'nav-employees', label: 'Funcionários', href: '/employee-management', icon: 'UsersIcon', group: 'Recursos Humanos' },
   { key: 'nav-rh', label: 'Recursos Humanos', href: '/recursos-humanos', icon: 'UserGroupIcon', group: 'Recursos Humanos' },
-  { key: 'nav-attendance', label: 'Assiduidade', href: '/administrative-dashboard', icon: 'ClipboardDocumentCheckIcon', badge: 3, group: 'Recursos Humanos' },
-  { key: 'nav-schedules', label: 'Horários', href: '/administrative-dashboard', icon: 'CalendarDaysIcon', group: 'Recursos Humanos' },
-  { key: 'nav-payroll', label: 'Processamento Salarial', href: '/administrative-dashboard', icon: 'BanknotesIcon', group: 'Financeiro' },
-  { key: 'nav-biometric', label: 'Dispositivos Biométricos', href: '/administrative-dashboard', icon: 'FingerPrintIcon', badge: 1, group: 'Biométrico' },
-  { key: 'nav-reports', label: 'Relatórios', href: '/administrative-dashboard', icon: 'DocumentChartBarIcon', group: 'Análise' },
-  { key: 'nav-notifications', label: 'Notificações', href: '/administrative-dashboard', icon: 'BellAlertIcon', badge: 5, group: 'Análise' },
-  { key: 'nav-audit', label: 'Logs de Auditoria', href: '/administrative-dashboard', icon: 'ShieldCheckIcon', group: 'Segurança' },
-  { key: 'nav-settings', label: 'Configurações', href: '/administrative-dashboard', icon: 'Cog6ToothIcon', group: 'Sistema' },
+  { key: 'nav-attendance', label: 'Assiduidade', href: '/assiduidade', icon: 'ClipboardDocumentCheckIcon', badge: 3, group: 'Recursos Humanos' },
+  { key: 'nav-schedules', label: 'Horários', href: '/horarios', icon: 'CalendarDaysIcon', group: 'Recursos Humanos' },
+  { key: 'nav-payroll', label: 'Processamento Salarial', href: '/processamento-salarial', icon: 'BanknotesIcon', group: 'Financeiro' },
+  { key: 'nav-biometric', label: 'Dispositivos Biométricos', href: '/dispositivos-biometricos', icon: 'FingerPrintIcon', badge: 1, group: 'Biométrico' },
+  { key: 'nav-reports', label: 'Relatórios', href: '/relatorios', icon: 'DocumentChartBarIcon', group: 'Análise' },
+  { key: 'nav-notifications', label: 'Notificações', href: '/notificacoes', icon: 'BellAlertIcon', badge: 5, group: 'Análise' },
+  { key: 'nav-audit', label: 'Logs de Auditoria', href: '/auditoria', icon: 'ShieldCheckIcon', group: 'Segurança' },
+  { key: 'nav-settings', label: 'Configurações', href: '/configuracoes', icon: 'Cog6ToothIcon', group: 'Sistema' },
 ];
 
 const groupOrder = ['Principal', 'Recursos Humanos', 'Financeiro', 'Biométrico', 'Análise', 'Segurança', 'Sistema'];
@@ -43,12 +43,7 @@ export default function Sidebar({ collapsed, mobileOpen, currentPath, onMobileCl
     items: navItems.filter((item) => item.group === group),
   })).filter((g) => g.items.length > 0);
 
-  const isActive = (href: string) => {
-    if (href === '/administrative-dashboard' && currentPath === '/administrative-dashboard') return true;
-    if (href === '/employee-management' && currentPath === '/employee-management') return true;
-    if (href === '/recursos-humanos' && currentPath === '/recursos-humanos') return true;
-    return false;
-  };
+  const isActive = (item: NavItem) => currentPath === item.href;
 
   return (
     <>
@@ -87,7 +82,7 @@ export default function Sidebar({ collapsed, mobileOpen, currentPath, onMobileCl
                   title={collapsed ? item.label : undefined}
                   className={[
                     'flex items-center gap-3 mx-2 px-2 py-2 rounded-md text-sm font-500 transition-all duration-150 group relative',
-                    isActive(item.href)
+                    isActive(item)
                       ? 'bg-primary/10 text-primary' :'text-muted-foreground hover:bg-secondary hover:text-foreground',
                     collapsed ? 'justify-center' : '',
                   ].join(' ')}
@@ -95,7 +90,7 @@ export default function Sidebar({ collapsed, mobileOpen, currentPath, onMobileCl
                   <Icon
                     name={item.icon as Parameters<typeof Icon>[0]['name']}
                     size={18}
-                    variant={isActive(item.href) ? 'solid' : 'outline'}
+                    variant={isActive(item) ? 'solid' : 'outline'}
                     className="flex-shrink-0"
                   />
                   {!collapsed && (
@@ -168,11 +163,11 @@ export default function Sidebar({ collapsed, mobileOpen, currentPath, onMobileCl
                   onClick={onMobileClose}
                   className={[
                     'flex items-center gap-3 mx-2 px-2 py-2 rounded-md text-sm font-500 transition-all duration-150',
-                    isActive(item.href)
+                    isActive(item)
                       ? 'bg-primary/10 text-primary' :'text-muted-foreground hover:bg-secondary hover:text-foreground',
                   ].join(' ')}
                 >
-                  <Icon name={item.icon as Parameters<typeof Icon>[0]['name']} size={18} variant={isActive(item.href) ? 'solid' : 'outline'} />
+                  <Icon name={item.icon as Parameters<typeof Icon>[0]['name']} size={18} variant={isActive(item) ? 'solid' : 'outline'} />
                   <span className="flex-1 truncate">{item.label}</span>
                   {item.badge !== undefined && (
                     <span className="bg-danger text-white text-[10px] font-700 rounded-full px-1.5 py-0.5 min-w-[18px] text-center leading-none">
