@@ -30,9 +30,16 @@
   --info: #0369A1;
   --info-bg: #E0F2FE;
 
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 64px;
+  --sidebar-width: 0px;
+  --sidebar-collapsed-width: 0px;
   --topbar-height: 64px;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --sidebar-width: 240px;
+    --sidebar-collapsed-width: 64px;
+  }
 }
 
 @layer base {

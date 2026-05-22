@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import Modal from '@/components/ui/Modal';
+import { api } from '@/lib/api';
+
 
 type TipoContrato = 'efectivo' | 'prazo_certo' | 'prazo_incerto' | 'prestacao_servicos' | 'estagio';
 type EstadoContrato = 'activo' | 'expirado' | 'renovado' | 'rescindido' | 'a_renovar';
@@ -51,11 +53,94 @@ const estadoConfig: Record<EstadoContrato, { label: string; color: string; bg: s
 };
 
 export default function GestaoContratos() {
-  const [lista] = useState<Contrato[]>(contratos);
+  const [lista, setLista] = useState<Contrato[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Contrato | null>(null);
+
+  const fetchContratosData = async () => {
+    try {
+      setIsLoading(true);
+      const [backendContracts, backendFuncs] = await Promise.all([
+        api.get<any[]>('/contratos'),
+        api.get<any[]>('/funcionarios'),
+      ]);
+
+      const mapped: Contrato[] = backendContracts.map((c: any) => {
+        const emp = backendFuncs.find((e: any) => e.id === c.funcionario_id);
+        
+        const formatDate = (dStr: string) => {
+          if (!dStr) return '';
+          const parts = dStr.split('-');
+          return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dStr;
+        };
+
+        let tipo: TipoContrato = 'efectivo';
+        const tipoLower = (c.tipo || '').toLowerCase();
+        if (tipoLower.includes('efectivo') || tipoLower.includes('efetivo')) tipo = 'efectivo';
+        else if (tipoLower.includes('prazo certo') || tipoLower.includes('prazo_certo')) tipo = 'prazo_certo';
+        else if (tipoLower.includes('prazo incerto') || tipoLower.includes('prazo_incerto')) tipo = 'prazo_incerto';
+        else if (tipoLower.includes('serviço') || tipoLower.includes('prestacao_servicos')) tipo = 'prestacao_servicos';
+        else if (tipoLower.includes('estágio') || tipoLower.includes('estagio')) tipo = 'estagio';
+
+        let estado: EstadoContrato = c.ativo ? 'activo' : 'expirado';
+
+        const clausulas: string[] = [];
+        if (c.subsidio_alimentacao > 0) clausulas.push(`Subsídio de alimentação: ${c.subsidio_alimentacao.toLocaleString('pt-AO')} Kz`);
+        if (c.subsidio_transporte > 0) clausulas.push(`Subsídio de transporte: ${c.subsidio_transporte.toLocaleString('pt-AO')} Kz`);
+        if (c.outros_subsidios > 0) clausulas.push(`Outros subsídios: ${c.outros_subsidios.toLocaleString('pt-AO')} Kz`);
+        if (clausulas.length === 0) {
+          clausulas.push('Período de experiência: 90 dias');
+          clausulas.push('Subsídio de alimentação incluído');
+        }
+
+        let diasParaExpirar: number | undefined = undefined;
+        if (c.data_fim) {
+          const expirationDate = new Date(c.data_fim);
+          const today = new Date();
+          const diffTime = expirationDate.getTime() - today.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays > 0 && diffDays <= 30) {
+            diasParaExpirar = diffDays;
+            estado = 'a_renovar';
+          } else if (diffDays <= 0) {
+            estado = 'expirado';
+          }
+        }
+
+        return {
+          id: `cnt-${String(c.id).padStart(3, '0')}`,
+          funcionario: emp ? emp.nome : `Funcionário ID ${c.funcionario_id}`,
+          departamento: emp ? emp.departamento : 'Geral',
+          cargo: emp ? emp.cargo : 'Funcionário',
+          tipo,
+          dataInicio: formatDate(c.data_inicio),
+          dataFim: c.data_fim ? formatDate(c.data_fim) : undefined,
+          salarioBase: c.salario_base || 350000,
+          estado,
+          clausulas,
+          renovacoes: 0,
+          diasParaExpirar,
+        };
+      });
+
+      setLista(mapped);
+      setIsDemoMode(false);
+    } catch (error) {
+      console.warn('API error in GestaoContratos, falling back to offline demo mode:', error);
+      setLista(contratos);
+      setIsDemoMode(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchContratosData();
+  }, []);
 
   const filtered = lista.filter((c) => {
     const q = search.toLowerCase();
@@ -70,6 +155,15 @@ export default function GestaoContratos() {
 
   return (
     <div>
+      {isDemoMode && (
+        <div className="flex justify-end mb-4">
+          <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-600 uppercase px-2 py-0.5 rounded-full select-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            Demo Mode
+          </span>
+        </div>
+      )}
+
       {/* Alert banner */}
       {aRenovar > 0 && (
         <div className="flex items-center gap-3 bg-warning/10 border border-warning/20 rounded-xl px-4 py-3 mb-5">
@@ -149,66 +243,83 @@ export default function GestaoContratos() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map((cnt) => {
-                const tipo = tipoConfig[cnt.tipo];
-                const estado = estadoConfig[cnt.estado];
-                return (
-                  <tr key={cnt.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <p className="font-500 text-foreground">{cnt.funcionario}</p>
-                      <p className="text-xs text-muted-foreground">{cnt.cargo} · {cnt.departamento}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={['text-xs font-500 px-2 py-0.5 rounded-full', tipo.bg, tipo.color].join(' ')}>
-                        {tipo.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-sm text-foreground font-tabular">{cnt.dataInicio}</p>
-                      {cnt.dataFim && (
-                        <p className="text-xs text-muted-foreground font-tabular">
-                          até {cnt.dataFim}
-                          {cnt.diasParaExpirar !== undefined && (
-                            <span className={['ml-1 font-500', cnt.diasParaExpirar <= 30 ? 'text-warning' : 'text-muted-foreground'].join(' ')}>
-                              ({cnt.diasParaExpirar}d)
-                            </span>
-                          )}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right font-600 text-foreground font-tabular">
-                      {cnt.salarioBase.toLocaleString('pt-AO')} Kz
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="text-sm font-600 text-foreground font-tabular">{cnt.renovacoes}×</span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={['text-xs font-500 px-2 py-0.5 rounded-full', estado.bg, estado.color].join(' ')}>
-                        {estado.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-end">
-                        {cnt.estado === 'a_renovar' && (
-                          <button
-                            onClick={() => toast.success(`Processo de renovação iniciado para ${cnt.funcionario}.`)}
-                            className="text-xs text-warning font-500 hover:underline"
-                          >
-                            Renovar
-                          </button>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="py-16 text-center text-muted-foreground">
+                    <div className="flex flex-col items-center gap-3">
+                      <Icon name="ArrowPathIcon" size={24} className="animate-spin text-primary" />
+                      <span className="text-sm font-500 text-foreground">A carregar contratos de trabalho...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                    Nenhum contrato de trabalho encontrado.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((cnt) => {
+                  const tipo = tipoConfig[cnt.tipo];
+                  const estado = estadoConfig[cnt.estado];
+                  return (
+                    <tr key={cnt.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="font-500 text-foreground">{cnt.funcionario}</p>
+                        <p className="text-xs text-muted-foreground">{cnt.cargo} · {cnt.departamento}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={['text-xs font-500 px-2 py-0.5 rounded-full', tipo.bg, tipo.color].join(' ')}>
+                          {tipo.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-sm text-foreground font-tabular">{cnt.dataInicio}</p>
+                        {cnt.dataFim && (
+                          <p className="text-xs text-muted-foreground font-tabular">
+                            até {cnt.dataFim}
+                            {cnt.diasParaExpirar !== undefined && (
+                              <span className={['ml-1 font-500', cnt.diasParaExpirar <= 30 ? 'text-warning' : 'text-muted-foreground'].join(' ')}>
+                                ({cnt.diasParaExpirar}d)
+                              </span>
+                            )}
+                          </p>
                         )}
-                        <button
-                          onClick={() => setSelected(cnt)}
-                          className="p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors"
-                          title="Ver contrato"
-                        >
-                          <Icon name="EyeIcon" size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                      </td>
+                      <td className="px-4 py-3 text-right font-600 text-foreground font-tabular">
+                        {cnt.salarioBase.toLocaleString('pt-AO')} Kz
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-sm font-600 text-foreground font-tabular">{cnt.renovacoes}×</span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={['text-xs font-500 px-2 py-0.5 rounded-full', estado.bg, estado.color].join(' ')}>
+                          {estado.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 justify-end">
+                          {cnt.estado === 'a_renovar' && (
+                            <button
+                              onClick={() => toast.success(`Processo de renovação iniciado para ${cnt.funcionario}.`)}
+                              className="text-xs text-warning font-500 hover:underline"
+                            >
+                              Renovar
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setSelected(cnt)}
+                            className="p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                            title="Ver contrato"
+                          >
+                            <Icon name="EyeIcon" size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

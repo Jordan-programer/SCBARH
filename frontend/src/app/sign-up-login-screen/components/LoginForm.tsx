@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import Link from 'next/link';
 import Icon from '@/components/ui/AppIcon';
+import { useAuth } from '@/context/AuthContext';
+import { ApiError } from '@/lib/api';
 
 interface LoginFormData {
   email: string;
@@ -12,10 +14,10 @@ interface LoginFormData {
 }
 
 const demoCredentials = [
-  { role: 'Super Administrador', email: 'superadmin@scbarh.ao', password: 'ScbAdmin@2026' },
-  { role: 'Administrador', email: 'admin@scbarh.ao', password: 'Admin@2026' },
-  { role: 'RH', email: 'rh@scbarh.ao', password: 'RhScb@2026' },
-  { role: 'Supervisor', email: 'supervisor@scbarh.ao', password: 'Supv@2026' },
+  { role: 'Super Administrador (Real BD)', email: 'admin@scbarh.ao', password: 'admin123' },
+  { role: 'Administrador (Demo)', email: 'admin_demo@scbarh.ao', password: 'Admin@2026' },
+  { role: 'RH (Demo)', email: 'rh@scbarh.ao', password: 'RhScb@2026' },
+  { role: 'Supervisor (Demo)', email: 'supervisor@scbarh.ao', password: 'Supv@2026' },
 ];
 
 export default function LoginForm() {
@@ -23,6 +25,8 @@ export default function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const { login } = useAuth();
 
   const {
     register,
@@ -37,20 +41,60 @@ export default function LoginForm() {
     setLoginError('');
     setIsLoading(true);
 
-    // Backend integration point — replace with actual auth API call
-    await new Promise((res) => setTimeout(res, 1200));
-
-    const valid = demoCredentials.find(
-      (c) => c.email === data.email && c.password === data.password,
-    );
-
-    if (valid) {
-      // Redirect to dashboard on success
+    try {
+      // Tentar autenticar com a API real
+      await login(data.email, data.password);
       window.location.href = '/administrative-dashboard';
-    } else {
-      setLoginError('Credenciais inválidas — utilize as contas de demonstração abaixo para iniciar sessão.');
+    } catch (err) {
+      console.warn('Falha na autenticação via API backend:', err);
+
+      if (err instanceof ApiError && err.status !== 0) {
+        // Erro retornado pela própria API (ex: 401 Credenciais inválidas, ou 403 Inativo)
+        setLoginError(err.message);
+        setIsLoading(false);
+        return;
+      }
+
+      // Se a API estiver offline (status === 0), fazemos fallback elegante para Modo Demo Offline
+      const offlineValid = demoCredentials.find(
+        (c) => c.email === data.email && c.password === data.password,
+      );
+
+      if (offlineValid) {
+        // Simular login offline guardando informações fictícias
+        localStorage.setItem('scbarh_token', 'offline-demo-token');
+        localStorage.setItem(
+          'scbarh_demo_user',
+          JSON.stringify({
+            id: 9999,
+            nome: offlineValid.role.includes('Super')
+              ? 'Super Administrador (Offline)'
+              : offlineValid.role.includes('RH')
+                ? 'Responsável de Recursos Humanos'
+                : 'Supervisor de Secção',
+            email: offlineValid.email,
+            role: offlineValid.role.includes('Super')
+              ? 'SUPER_ADMIN'
+              : offlineValid.role.includes('RH')
+                ? 'ADMIN_RH'
+                : 'GESTOR',
+            ativo: true,
+          }),
+        );
+
+        // Pequeno feedback visual para o utilizador saber que entrou em modo offline
+        setLoginError('Servidor offline — Iniciando sessão em Modo de Demonstração...');
+        setTimeout(() => {
+          window.location.href = '/administrative-dashboard';
+        }, 1200);
+      } else {
+        setLoginError(
+          'Não foi possível estabelecer ligação com a API do servidor e estas credenciais não correspondem a nenhuma conta demo local offline. ' +
+          'Por favor utilize o botão "Preencher" abaixo para testar as credenciais padrão.'
+        );
+        setIsLoading(false);
+      }
     }
-    setIsLoading(false);
   };
 
   const autofill = (cred: typeof demoCredentials[0]) => {
@@ -200,65 +244,6 @@ export default function LoginForm() {
           )}
         </button>
       </form>
-
-      {/* Demo credentials table */}
-      <div className="mt-6">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="flex-1 h-px bg-border" />
-          <span className="text-[11px] text-muted-foreground font-500 uppercase tracking-wider px-2">Contas de Demonstração</span>
-          <div className="flex-1 h-px bg-border" />
-        </div>
-
-        <div className="border border-border rounded-xl overflow-hidden">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-muted/50 border-b border-border">
-                <th className="text-left px-3 py-2 font-600 text-muted-foreground">Perfil</th>
-                <th className="text-left px-3 py-2 font-600 text-muted-foreground hidden sm:table-cell">E-mail</th>
-                <th className="text-center px-3 py-2 font-600 text-muted-foreground">Usar</th>
-              </tr>
-            </thead>
-            <tbody>
-              {demoCredentials.map((cred, idx) => (
-                <tr
-                  key={`cred-${cred.role}`}
-                  className={['border-b border-border last:border-0 hover:bg-primary/5 transition-colors', idx % 2 === 0 ? '' : 'bg-muted/20'].join(' ')}
-                >
-                  <td className="px-3 py-2">
-                    <span className="font-500 text-foreground">{cred.role}</span>
-                  </td>
-                  <td className="px-3 py-2 hidden sm:table-cell">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground font-tabular truncate max-w-[160px]">{cred.email}</span>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(cred.email, `email-${idx}`)}
-                        className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
-                        title="Copiar e-mail"
-                      >
-                        <Icon name={copiedField === `email-${idx}` ? 'CheckIcon' : 'ClipboardIcon'} size={12} />
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => autofill(cred)}
-                      className="inline-flex items-center gap-1 text-primary font-600 hover:bg-primary/10 px-2 py-0.5 rounded transition-colors"
-                    >
-                      <Icon name="ArrowUpTrayIcon" size={11} />
-                      Preencher
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-[10px] text-muted-foreground mt-2 text-center">
-          Clique em &quot;Preencher&quot; para pré-carregar as credenciais no formulário
-        </p>
-      </div>
 
       <p className="text-center text-xs text-muted-foreground mt-6">
         Problemas de acesso?{' '}

@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Toaster, toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
+import { api } from '@/lib/api';
+
 
 import Modal from '@/components/ui/Modal';
+import { useAuth } from '@/context/AuthContext';
 import EmployeeForm from './EmployeeForm';
 import EmployeeFilters from './EmployeeFilters';
 import BulkActionBar from './BulkActionBar';
@@ -55,7 +58,32 @@ export type FilterState = {
 };
 
 export default function EmployeeManagementClient() {
-  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
+  const { user } = useAuth();
+  const isGestor = user?.role === 'GESTOR';
+  const [gestorDept, setGestorDept] = useState<string>('');
+
+  useEffect(() => {
+    if (user?.funcionario_id) {
+      api.get(`/funcionarios/${user.funcionario_id}`)
+        .then((emp: any) => {
+          if (emp?.departamento) {
+            setDepartmentAndPresetFilter(emp.departamento);
+          }
+        })
+        .catch((err) => {
+          console.error('Error fetching gestor department:', err);
+        });
+    }
+  }, [user]);
+
+  const setDepartmentAndPresetFilter = (dept: string) => {
+    setGestorDept(dept);
+    setFilters((prev) => ({ ...prev, departamento: dept }));
+  };
+
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [filters, setFilters] = useState<FilterState>({ search: '', departamento: '', estado: '', biometrico: '' });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
@@ -72,12 +100,92 @@ export default function EmployeeManagementClient() {
   });
   const [colPickerOpen, setColPickerOpen] = useState(false);
 
+  const fetchEmployees = async () => {
+    try {
+      setIsLoading(true);
+      const [backendFuncs, backendContracts] = await Promise.all([
+        api.get<any[]>('/funcionarios'),
+        api.get<any[]>('/contratos')
+      ]);
+
+      const mapped = backendFuncs.map((f: any) => {
+        const activeContract = backendContracts.find((c: any) => c.funcionario_id === f.id && c.ativo);
+        const salarioBase = activeContract ? activeContract.salario_base : 350000;
+
+        let formattedAdmissao = '';
+        if (f.data_admissao) {
+          const parts = f.data_admissao.split('-');
+          if (parts.length === 3) {
+            formattedAdmissao = `${parts[2]}/${parts[1]}/${parts[0]}`;
+          } else {
+            formattedAdmissao = new Date(f.data_admissao).toLocaleDateString('pt-AO');
+          }
+        }
+
+        const estado: EmployeeStatus = f.ativo ? 'ativo' : 'inativo';
+        const biometrico: BiometricStatus = f.biometria_template ? 'validado' : 
+          (f.email === 'h.cardoso@scbarh.ao' ? 'registado' : 
+           (f.email === 'j.sebastiao@scbarh.ao' ? 'falha' : 'validado'));
+
+        const getAssiduidade = (email: string) => {
+          const mockAssiduidade: Record<string, number> = {
+            'a.rodrigues@scbarh.ao': 97,
+            'd.lopes@scbarh.ao': 94,
+            'c.teixeira@scbarh.ao': 78,
+            'b.matos@scbarh.ao': 96,
+            'f.neto@scbarh.ao': 91,
+            'h.cardoso@scbarh.ao': 88,
+            'i.ferreira@scbarh.ao': 93,
+            'j.sebastiao@scbarh.ao': 82,
+          };
+          return mockAssiduidade[email] ?? 95;
+        };
+
+        return {
+          id: `func-${String(f.id).padStart(3, '0')}`,
+          nome: f.nome,
+          nif: f.nif || f.bi || '',
+          email: f.email,
+          telefone: f.telefone,
+          departamento: f.departamento,
+          cargo: f.cargo,
+          horario: 'Standard (08:00–17:00)',
+          estado,
+          biometrico,
+          assiduidade: getAssiduidade(f.email),
+          salarioBase,
+          dataAdmissao: formattedAdmissao,
+          turno: 'Diurno',
+        };
+      });
+
+      setEmployees(mapped);
+      setIsDemoMode(false);
+    } catch (error) {
+      console.warn('API error, falling back to offline demo mode:', error);
+      setEmployees(initialEmployees);
+      setIsDemoMode(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
+
   const filtered = useMemo(() => {
     return employees
       .filter((e) => {
         const q = filters.search.toLowerCase();
         const matchSearch = !q || e.nome.toLowerCase().includes(q) || e.email.toLowerCase().includes(q) || e.id.toLowerCase().includes(q) || e.cargo.toLowerCase().includes(q);
-        const matchDept = !filters.departamento || e.departamento === filters.departamento;
+        
+        let matchDept = !filters.departamento || e.departamento === filters.departamento;
+        if (isGestor) {
+          const deptFilter = gestorDept || 'Operações';
+          matchDept = e.departamento === deptFilter;
+        }
+
         const matchEstado = !filters.estado || e.estado === filters.estado;
         const matchBio = !filters.biometrico || e.biometrico === filters.biometrico;
         return matchSearch && matchDept && matchEstado && matchBio;
@@ -89,7 +197,7 @@ export default function EmployeeManagementClient() {
         return sortDir === 'asc' ? String(av).localeCompare(String(bv),'pt')
           : String(bv).localeCompare(String(av), 'pt');
       });
-  }, [employees, filters, sortCol, sortDir]);
+  }, [employees, filters, sortCol, sortDir, isGestor, gestorDept]);
 
   const totalPages = Math.ceil(filtered.length / perPage);
   const paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
@@ -115,40 +223,127 @@ export default function EmployeeManagementClient() {
     }
   };
 
-  const handleSave = (data: Partial<Employee>) => {
-    if (editingEmployee) {
-      setEmployees((prev) => prev.map((e) => e.id === editingEmployee.id ? { ...e, ...data } : e));
-      toast.success('Funcionário actualizado com sucesso.');
-    } else {
-      const newEmp: Employee = {
-        id: `func-${String(employees.length + 1).padStart(3, '0')}`,
-        assiduidade: 100,
-        dataAdmissao: new Date().toLocaleDateString('pt-AO'),
-        ...data,
-      } as Employee;
-      setEmployees((prev) => [newEmp, ...prev]);
-      toast.success('Funcionário registado com sucesso.');
+  const handleSave = async (data: Partial<Employee>) => {
+    if (isDemoMode) {
+      if (editingEmployee) {
+        setEmployees((prev) => prev.map((e) => e.id === editingEmployee.id ? { ...e, ...data } : e));
+        toast.info('Modo Demo: Alterações salvas localmente.');
+      } else {
+        const newEmp: Employee = {
+          id: `func-${String(employees.length + 1).padStart(3, '0')}`,
+          assiduidade: 100,
+          dataAdmissao: new Date().toLocaleDateString('pt-AO'),
+          ...data,
+        } as Employee;
+        setEmployees((prev) => [newEmp, ...prev]);
+        toast.info('Modo Demo: Funcionário criado localmente.');
+      }
+      setModalOpen(false);
+      setEditingEmployee(null);
+      return;
     }
-    setModalOpen(false);
-    setEditingEmployee(null);
+
+    try {
+      const mappedPayload = {
+        nome: data.nome,
+        nif: data.nif,
+        bi: data.nif ? `${data.nif}123` : `${Math.random().toString().slice(2, 11)}LA123`,
+        data_nascimento: '1990-01-01',
+        genero: 'M',
+        telefone: data.telefone,
+        email: data.email,
+        endereco: 'Luanda, Angola',
+        cargo: data.cargo,
+        departamento: data.departamento,
+        data_admissao: editingEmployee 
+          ? (editingEmployee.dataAdmissao.split('/').reverse().join('-')) 
+          : new Date().toISOString().split('T')[0],
+        ativo: data.estado === 'ativo',
+        biometria_template: data.biometrico === 'validado' ? 'VALID_TEMPLATE' : null,
+      };
+
+      if (editingEmployee) {
+        const backendId = parseInt(editingEmployee.id.replace('func-', ''), 10);
+        await api.put(`/funcionarios/${backendId}`, mappedPayload);
+
+        const contracts = await api.get<any[]>('/contratos');
+        const activeContract = contracts.find((c) => c.funcionario_id === backendId && c.ativo);
+        if (activeContract) {
+          if (activeContract.salario_base !== data.salarioBase) {
+            await api.put(`/contratos/${activeContract.id}`, {
+              salario_base: data.salarioBase,
+            });
+          }
+        } else {
+          await api.post('/contratos', {
+            funcionario_id: backendId,
+            tipo: 'Efectivo',
+            data_inicio: mappedPayload.data_admissao,
+            salario_base: data.salarioBase || 350000,
+            ativo: true,
+          });
+        }
+
+        toast.success('Funcionário actualizado com sucesso.');
+      } else {
+        const newFunc = await api.post<any>('/funcionarios', mappedPayload);
+        const newFuncId = newFunc.id;
+
+        await api.post('/contratos', {
+          funcionario_id: newFuncId,
+          tipo: 'Efectivo',
+          data_inicio: mappedPayload.data_admissao,
+          salario_base: data.salarioBase || 350000,
+          ativo: true,
+        });
+
+        toast.success('Funcionário registado com sucesso.');
+      }
+
+      await fetchEmployees();
+    } catch (err: any) {
+      console.error('Error saving employee:', err);
+      toast.error(err.message || 'Erro ao comunicar com o servidor.');
+    } finally {
+      setModalOpen(false);
+      setEditingEmployee(null);
+    }
   };
 
   const handleDelete = (emp: Employee) => {
     setDeleteTarget(emp);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
-    setEmployees((prev) => prev.filter((e) => e.id !== deleteTarget.id));
-    setSelectedIds((prev) => { const n = new Set(prev); n.delete(deleteTarget.id); return n; });
-    toast.success(`Funcionário ${deleteTarget.nome} removido do sistema.`);
-    setDeleteTarget(null);
+
+    if (isDemoMode) {
+      setEmployees((prev) => prev.filter((e) => e.id !== deleteTarget.id));
+      setSelectedIds((prev) => { const n = new Set(prev); n.delete(deleteTarget.id); return n; });
+      toast.info(`Modo Demo: Funcionário ${deleteTarget.nome} removido localmente.`);
+      setDeleteTarget(null);
+      return;
+    }
+
+    try {
+      const backendId = parseInt(deleteTarget.id.replace('func-', ''), 10);
+      await api.delete(`/funcionarios/${backendId}`);
+      toast.success(`Funcionário ${deleteTarget.nome} removido do sistema.`);
+      setSelectedIds((prev) => { const n = new Set(prev); n.delete(deleteTarget.id); return n; });
+      await fetchEmployees();
+    } catch (err: any) {
+      console.error('Error deleting employee:', err);
+      toast.error(err.message || 'Erro ao remover funcionário do servidor.');
+    } finally {
+      setDeleteTarget(null);
+    }
   };
 
   const handleEdit = (emp: Employee) => {
     setEditingEmployee(emp);
     setModalOpen(true);
   };
+
 
   const handleBulkDelete = () => {
     const count = selectedIds.size;
@@ -183,7 +378,15 @@ export default function EmployeeManagementClient() {
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-700 text-foreground">Gestão de Funcionários</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-700 text-foreground">Gestão de Funcionários</h1>
+            {isDemoMode && (
+              <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-600 uppercase px-2 py-0.5 rounded-full select-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                Demo Mode
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mt-0.5">
             {employees.length} funcionários registados · {employees.filter((e) => e.estado === 'ativo').length} activos
           </p>
@@ -193,13 +396,15 @@ export default function EmployeeManagementClient() {
             <Icon name="ArrowDownTrayIcon" size={15} />
             <span>Exportar</span>
           </button>
-          <button
-            onClick={() => { setEditingEmployee(null); setModalOpen(true); }}
-            className="flex items-center gap-1.5 bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-500 hover:bg-primary/90 transition-colors active:scale-95"
-          >
-            <Icon name="UserPlusIcon" size={15} />
-            <span>Novo Funcionário</span>
-          </button>
+          {!isGestor && (
+            <button
+              onClick={() => { setEditingEmployee(null); setModalOpen(true); }}
+              className="flex items-center gap-1.5 bg-primary text-primary-foreground rounded-lg px-3 py-2 text-sm font-500 hover:bg-primary/90 transition-colors active:scale-95"
+            >
+              <Icon name="UserPlusIcon" size={15} />
+              <span>Novo Funcionário</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -329,7 +534,17 @@ export default function EmployeeManagementClient() {
               </tr>
             </thead>
             <tbody>
-              {paginated.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={12} className="py-24 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <Icon name="ArrowPathIcon" size={28} className="animate-spin text-primary" />
+                      <p className="text-sm font-500 text-foreground">A carregar funcionários da base de dados...</p>
+                      <p className="text-xs text-muted-foreground">Por favor, aguarde um instante</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : paginated.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
@@ -361,6 +576,7 @@ export default function EmployeeManagementClient() {
                     onDelete={() => handleDelete(emp)}
                     visibleCols={visibleCols}
                     striped={idx % 2 !== 0}
+                    isReadOnly={isGestor}
                   />
                 ))
               )}
@@ -434,12 +650,14 @@ export default function EmployeeManagementClient() {
       </div>
 
       {/* Bulk action bar */}
-      <BulkActionBar
-        count={selectedIds.size}
-        onDelete={handleBulkDelete}
-        onStatusChange={handleBulkStatusChange}
-        onClear={() => setSelectedIds(new Set())}
-      />
+      {!isGestor && (
+        <BulkActionBar
+          count={selectedIds.size}
+          onDelete={handleBulkDelete}
+          onStatusChange={handleBulkStatusChange}
+          onClear={() => setSelectedIds(new Set())}
+        />
+      )}
 
       {/* Add/Edit Modal */}
       <Modal

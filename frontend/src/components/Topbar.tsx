@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { useAuth, getRoleLabel } from '@/context/AuthContext';
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -18,6 +19,11 @@ const notifications = [
 
 export default function Topbar({ onMenuClick }: TopbarProps) {
   const [notifOpen, setNotifOpen] = useState(false);
+  const { user } = useAuth();
+
+  const initials = user?.nome
+    ? user.nome.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
+    : 'U';
   const unreadCount = notifications.filter((n) => n.unread).length;
 
   const notifIcon = (type: string) => {
@@ -124,11 +130,11 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
       {/* User avatar */}
       <div className="flex items-center gap-2 pl-2 border-l border-border">
         <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-          <span className="text-white text-xs font-700">MA</span>
+          <span className="text-white text-xs font-700">{initials}</span>
         </div>
         <div className="hidden md:block">
-          <p className="text-xs font-600 text-foreground leading-tight">Manuel Afonso</p>
-          <p className="text-[10px] text-muted-foreground leading-tight">Super Admin</p>
+          <p className="text-xs font-600 text-foreground leading-tight">{user?.nome || 'Utilizador'}</p>
+          <p className="text-[10px] text-muted-foreground leading-tight">{getRoleLabel(user?.role)}</p>
         </div>
       </div>
     </header>

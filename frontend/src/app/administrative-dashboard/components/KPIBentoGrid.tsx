@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { useAuth } from '@/context/AuthContext';
 
 // Grid plan: 8 cards → grid-cols-4
 // Row 1: Hero (taxa assiduidade, spans 2 cols) + 2 regular cards
@@ -168,8 +169,95 @@ function TrendBadge({ trend, label, config }: { trend: number; label: string; co
 }
 
 export default function KPIBentoGrid() {
-  const heroCard = kpiCards.find((c) => c.hero)!;
-  const regularCards = kpiCards.filter((c) => !c.hero);
+  const { user } = useAuth();
+  const isGestor = user?.role === 'GESTOR';
+
+  const cards: KPICardData[] = isGestor ? [
+    {
+      id: 'kpi-attendance',
+      label: 'Taxa de Assiduidade da Equipa',
+      value: '95.8%',
+      subValue: 'Meta: 95%',
+      trend: 1.2,
+      trendLabel: 'vs. ontem',
+      icon: 'ChartBarSquareIcon',
+      variant: 'hero',
+      hero: true,
+    },
+    {
+      id: 'kpi-absences',
+      label: 'Faltas Hoje (Equipa)',
+      value: '0',
+      subValue: 'Nenhuma falta hoje',
+      trend: 0,
+      trendLabel: 'sem faltas',
+      icon: 'UserMinusIcon',
+      variant: 'success',
+    },
+    {
+      id: 'kpi-late',
+      label: 'Atrasos da Equipa (Mês)',
+      value: '2',
+      subValue: 'Média: 5 min',
+      trend: -1,
+      trendLabel: 'vs. semana passada',
+      icon: 'ClockIcon',
+      variant: 'warning',
+    },
+    {
+      id: 'kpi-overtime',
+      label: 'Horas Extras da Equipa',
+      value: '12h',
+      subValue: 'Autorizadas esta semana',
+      trend: 2,
+      trendLabel: 'vs. semana anterior',
+      icon: 'BoltIcon',
+      variant: 'info',
+    },
+    {
+      id: 'kpi-active',
+      label: 'Membros na Equipa',
+      value: '2',
+      subValue: 'Operações (Ativos)',
+      trend: 0,
+      trendLabel: 'sem alteração',
+      icon: 'UsersIcon',
+      variant: 'default',
+    },
+    {
+      id: 'kpi-ferias-pendentes',
+      label: 'Férias Pendentes da Equipa',
+      value: '1',
+      subValue: 'Aguardando aprovação',
+      trend: 1,
+      trendLabel: 'esta semana',
+      icon: 'CalendarDaysIcon',
+      variant: 'warning',
+    },
+    {
+      id: 'kpi-notificacoes-equipa',
+      label: 'Alertas de Escala',
+      value: '0',
+      subValue: 'Escalas atualizadas',
+      trend: 0,
+      trendLabel: 'sem pendências',
+      icon: 'BellAlertIcon',
+      variant: 'success',
+    },
+    {
+      id: 'kpi-early',
+      label: 'Saídas Antecipadas',
+      value: '0',
+      subValue: 'Média da equipa',
+      trend: 0,
+      trendLabel: 'ótimo desempenho',
+      icon: 'ArrowLeftOnRectangleIcon',
+      variant: 'default',
+    },
+  ] : kpiCards;
+
+  const heroCard = cards.find((c) => c.hero)!;
+  const regularCards = cards.filter((c) => !c.hero);
 
   const renderCard = (card: KPICardData, extraClass = '') => {
     const cfg = variantConfig[card.variant];

@@ -1,21 +1,29 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from app.config import settings
 
-# Contexto para hashing de senhas usando bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+# Hashing de senhas direto com a biblioteca bcrypt (evita incompatibilidades do passlib no Python 3.13)
 
 def hash_password(password: str) -> str:
     """Gera o hash bcrypt para uma senha em texto plano."""
-    return pwd_context.hash(password)
+    # O bcrypt exige bytes para a senha
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed.decode('utf-8')
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifica se a senha em texto plano corresponde ao hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
+    except Exception:
+        return False
 
 
 def create_access_token(subject: str | Any, expires_delta: Optional[timedelta] = None) -> str:

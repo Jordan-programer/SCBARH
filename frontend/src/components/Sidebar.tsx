@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
+import { useAuth, getRoleLabel } from '@/context/AuthContext';
 
 interface NavItem {
   key: string;
@@ -38,9 +39,53 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ collapsed, mobileOpen, currentPath, onMobileClose }: SidebarProps) {
+  const { user, logout } = useAuth();
+
+  const initials = user?.nome
+    ? user.nome.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
+    : 'U';
+
+  const isGestor = user?.role === 'GESTOR';
+
+  const filteredNavItems = navItems
+    .filter((item) => {
+      if (isGestor) {
+        // Excluir menus de administração sensíveis
+        if (
+          item.group === 'Financeiro' ||
+          item.group === 'Biométrico' ||
+          item.group === 'Segurança' ||
+          item.group === 'Sistema'
+        ) {
+          return false;
+        }
+      }
+      return true;
+    })
+    .map((item) => {
+      if (isGestor) {
+        if (item.key === 'nav-dashboard') {
+          return { ...item, label: 'Dashboard da Equipa' };
+        }
+        if (item.key === 'nav-employees') {
+          return { ...item, label: 'Minha Equipa' };
+        }
+        if (item.key === 'nav-rh') {
+          return { ...item, label: 'Férias da Equipa' };
+        }
+        if (item.key === 'nav-attendance') {
+          return { ...item, label: 'Assiduidade da Equipa' };
+        }
+        if (item.key === 'nav-schedules') {
+          return { ...item, label: 'Escalas de Trabalho' };
+        }
+      }
+      return item;
+    });
+
   const grouped = groupOrder.map((group) => ({
     group,
-    items: navItems.filter((item) => item.group === group),
+    items: filteredNavItems.filter((item) => item.group === group),
   })).filter((g) => g.items.length > 0);
 
   const isActive = (item: NavItem) => currentPath === item.href;
@@ -117,18 +162,18 @@ export default function Sidebar({ collapsed, mobileOpen, currentPath, onMobileCl
         {/* User profile at bottom */}
         <div className={['border-t border-border p-3 flex items-center gap-3', collapsed ? 'justify-center' : ''].join(' ')}>
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-            <span className="text-white text-xs font-700">MA</span>
+            <span className="text-white text-xs font-700">{initials}</span>
           </div>
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-600 text-foreground truncate">Manuel Afonso</p>
-              <p className="text-[10px] text-muted-foreground truncate">Super Administrador</p>
+              <p className="text-xs font-600 text-foreground truncate">{user?.nome || 'Utilizador'}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{getRoleLabel(user?.role)}</p>
             </div>
           )}
           {!collapsed && (
-            <Link href="/" title="Terminar Sessão">
+            <button onClick={logout} title="Terminar Sessão" className="flex items-center justify-center focus:outline-none">
               <Icon name="ArrowRightOnRectangleIcon" size={16} className="text-muted-foreground hover:text-danger transition-colors" />
-            </Link>
+            </button>
           )}
         </div>
       </aside>
@@ -181,15 +226,15 @@ export default function Sidebar({ collapsed, mobileOpen, currentPath, onMobileCl
         </nav>
         <div className="border-t border-border p-3 flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-            <span className="text-white text-xs font-700">MA</span>
+            <span className="text-white text-xs font-700">{initials}</span>
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-600 text-foreground truncate">Manuel Afonso</p>
-            <p className="text-[10px] text-muted-foreground truncate">Super Administrador</p>
+            <p className="text-xs font-600 text-foreground truncate">{user?.nome || 'Utilizador'}</p>
+            <p className="text-[10px] text-muted-foreground truncate">{getRoleLabel(user?.role)}</p>
           </div>
-          <Link href="/" title="Terminar Sessão">
+          <button onClick={logout} title="Terminar Sessão" className="flex items-center justify-center focus:outline-none">
             <Icon name="ArrowRightOnRectangleIcon" size={16} className="text-muted-foreground hover:text-danger transition-colors" />
-          </Link>
+          </button>
         </div>
       </aside>
     </>

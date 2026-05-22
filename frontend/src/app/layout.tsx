@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Metadata, Viewport } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
+import { AuthProvider } from '@/context/AuthContext';
 import '../styles/tailwind.css';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -29,10 +30,12 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt" className={plusJakartaSans.variable}>
-      <body className={plusJakartaSans.className}>{children}
+      <body className={plusJakartaSans.className}>
+        <AuthProvider>{children}</AuthProvider>
 
         <script type="module" async src="https://static.rocket.new/rocket-web.js?_cfg=https%3A%2F%2Fscbarh5066back.builtwithrocket.new&_be=https%3A%2F%2Fappanalytics.rocket.new&_v=0.1.18" />
-        <script type="module" defer src="https://static.rocket.new/rocket-shot.js?v=0.0.2" /></body>
+        <script type="module" defer src="https://static.rocket.new/rocket-shot.js?v=0.0.2" />
+      </body>
     </html>
   );
-}
+}

@@ -13,6 +13,7 @@ interface EmployeeTableRowProps {
   onDelete: () => void;
   visibleCols: Record<string, boolean>;
   striped: boolean;
+  isReadOnly?: boolean;
 }
 
 export default function EmployeeTableRow({
@@ -23,6 +24,7 @@ export default function EmployeeTableRow({
   onDelete,
   visibleCols,
   striped,
+  isReadOnly = false,
 }: EmployeeTableRowProps) {
   const initials = emp.nome
     .split(' ')
@@ -152,26 +154,30 @@ export default function EmployeeTableRow({
       {/* Actions — visible on hover */}
       <td className="px-4 py-3">
         <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={onEdit}
-            title="Editar funcionário"
-            className="p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all active:scale-90"
-          >
-            <Icon name="PencilSquareIcon" size={15} />
-          </button>
+          {!isReadOnly && (
+            <button
+              onClick={onEdit}
+              title="Editar funcionário"
+              className="p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all active:scale-90"
+            >
+              <Icon name="PencilSquareIcon" size={15} />
+            </button>
+          )}
           <button
             title="Ver histórico de assiduidade"
             className="p-1.5 rounded-md hover:bg-info/10 text-muted-foreground hover:text-info transition-all active:scale-90"
           >
             <Icon name="ClipboardDocumentListIcon" size={15} />
           </button>
-          <button
-            onClick={onDelete}
-            title="Remover funcionário — esta ação não pode ser desfeita"
-            className="p-1.5 rounded-md hover:bg-danger/10 text-muted-foreground hover:text-danger transition-all active:scale-90"
-          >
-            <Icon name="TrashIcon" size={15} />
-          </button>
+          {!isReadOnly && (
+            <button
+              onClick={onDelete}
+              title="Remover funcionário — esta ação não pode ser desfeita"
+              className="p-1.5 rounded-md hover:bg-danger/10 text-muted-foreground hover:text-danger transition-all active:scale-90"
+            >
+              <Icon name="TrashIcon" size={15} />
+            </button>
+          )}
         </div>
       </td>
     </tr>

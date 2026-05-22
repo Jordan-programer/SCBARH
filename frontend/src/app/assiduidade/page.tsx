@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import Icon from '@/components/ui/AppIcon';
+import { useAuth } from '@/context/AuthContext';
+import { api } from '@/lib/api';
 import { toast, Toaster } from 'sonner';
 
 interface Anomalia {
@@ -23,9 +25,35 @@ const anomaliasIniciais: Anomalia[] = [
 ];
 
 export default function AssiduidadePage() {
+  const { user } = useAuth();
+  const isGestor = user?.role === 'GESTOR';
+  const [gestorDeptVal, setGestorDeptVal] = useState<string>('');
+
+  useEffect(() => {
+    if (user?.funcionario_id) {
+      api.get(`/funcionarios/${user.funcionario_id}`)
+        .then((emp: any) => {
+          if (emp?.departamento) {
+            setGestorDeptVal(emp.departamento);
+          }
+        })
+        .catch((err) => {
+          console.error('Error fetching gestor department:', err);
+        });
+    }
+  }, [user]);
+
   const [anomalias, setAnomalias] = useState<Anomalia[]>(anomaliasIniciais);
   const [simulandoPonto, setSimulandoPonto] = useState(false);
   const [selectedDia, setSelectedDia] = useState<number | null>(null);
+
+  const deptFilter = gestorDeptVal || 'Operações';
+  const scopedAnomalias = anomalias.filter((a) => {
+    if (isGestor) {
+      return a.departamento === deptFilter;
+    }
+    return true;
+  });
 
   // Generate calendar days for mock (May 2026)
   const calendarDays = Array.from({ length: 31 }).map((_, idx) => {
@@ -100,10 +128,10 @@ export default function AssiduidadePage() {
         {/* KPI Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Taxa de Presença (Hoje)', value: '94.8%', sub: '120 presentes · 7 ausentes', icon: 'CheckCircleIcon', color: 'text-success', bg: 'bg-success/10' },
-            { label: 'Atrasos Registados (Este Mês)', value: '14 incidentes', sub: 'Média de 12 min por atraso', icon: 'ClockIcon', color: 'text-warning', bg: 'bg-warning/10' },
-            { label: 'Horas Extras Acumuladas', value: '48.5 horas', sub: 'Aprovadas pelo supervisor', icon: 'ArrowTrendingUpIcon', color: 'text-info', bg: 'bg-info/10' },
-            { label: 'Faltas Por Justificar', value: '2 ativas', sub: 'Requerem atenção imediata', icon: 'ExclamationTriangleIcon', color: 'text-danger', bg: 'bg-danger/10' },
+            { label: isGestor ? 'Taxa de Presença (Equipa)' : 'Taxa de Presença (Hoje)', value: isGestor ? '95.8%' : '94.8%', sub: isGestor ? '2 presentes · 0 ausentes' : '120 presentes · 7 ausentes', icon: 'CheckCircleIcon', color: 'text-success', bg: 'bg-success/10' },
+            { label: isGestor ? 'Atrasos da Equipa (Mês)' : 'Atrasos Registados (Este Mês)', value: isGestor ? '2 incidentes' : '14 incidentes', sub: isGestor ? 'Média de 5 min por atraso' : 'Média de 12 min por atraso', icon: 'ClockIcon', color: 'text-warning', bg: 'bg-warning/10' },
+            { label: 'Horas Extras Acumuladas', value: isGestor ? '12.0 horas' : '48.5 horas', sub: isGestor ? 'Autorizadas esta semana' : 'Aprovadas pelo supervisor', icon: 'ArrowTrendingUpIcon', color: 'text-info', bg: 'bg-info/10' },
+            { label: 'Faltas Por Justificar', value: isGestor ? `${scopedAnomalias.filter(a => !a.justificada).length} ativas` : '2 ativas', sub: 'Requerem atenção imediata', icon: 'ExclamationTriangleIcon', color: 'text-danger', bg: 'bg-danger/10' },
           ].map((kpi, idx) => (
             <div key={idx} className="bg-card border border-border rounded-xl p-5 shadow-card hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-3">
@@ -216,12 +244,12 @@ export default function AssiduidadePage() {
               <p className="text-xs text-muted-foreground">Inconsistências de biometria que requerem justificação.</p>
             </div>
             <span className="text-xs font-700 bg-danger/10 text-danger px-2.5 py-0.5 rounded-full">
-              {anomalias.filter(a => !a.justificada).length} Críticas
+              {scopedAnomalias.filter(a => !a.justificada).length} Críticas
             </span>
           </div>
 
           <div className="space-y-3">
-            {anomalias.map((anom) => (
+            {scopedAnomalias.map((anom) => (
               <div key={anom.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between border border-border rounded-xl p-4 gap-3 bg-muted/10 hover:bg-muted/20 transition-all">
                 <div className="flex items-start gap-3">
                   <div className={['w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5', anom.justificada ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'].join(' ')}>

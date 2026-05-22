@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import Modal from '@/components/ui/Modal';
+import { useAuth } from '@/context/AuthContext';
+import { api } from '@/lib/api';
 
 
 interface FichaFuncionario {
@@ -29,7 +31,7 @@ interface FichaFuncionario {
   observacoes?: string;
 }
 
-const fichas: FichaFuncionario[] = [
+const mockFichas: FichaFuncionario[] = [
   { id: 'func-001', nome: 'Amélia Rodrigues Santos', foto: '', cargo: 'Contabilista Sénior', departamento: 'Financeiro', email: 'a.rodrigues@scbarh.ao', telefone: '+244 923 456 789', nif: '123456789LA', dataAdmissao: '15/03/2019', tipoContrato: 'Efectivo', salarioBase: 450000, estado: 'ativo', genero: 'F', dataNascimento: '12/07/1988', endereco: 'Rua da Missão, 45, Luanda', supervisor: 'Manuel Afonso', nivelEducacao: 'Licenciatura', experienciaAnos: 7 },
   { id: 'func-002', nome: 'Domingos Ferreira Lopes', foto: '', cargo: 'Engenheiro de Software', departamento: 'TI', email: 'd.lopes@scbarh.ao', telefone: '+244 912 345 678', nif: '234567890LA', dataAdmissao: '02/07/2020', tipoContrato: 'Efectivo', salarioBase: 520000, estado: 'ativo', genero: 'M', dataNascimento: '03/11/1992', endereco: 'Av. 4 de Fevereiro, 120, Luanda', supervisor: 'Manuel Afonso', nivelEducacao: 'Mestrado', experienciaAnos: 5 },
   { id: 'func-003', nome: 'Carlos Eduardo Teixeira', foto: '', cargo: 'Supervisor de Linha', departamento: 'Operações', email: 'c.teixeira@scbarh.ao', telefone: '+244 934 567 890', nif: '345678901LA', dataAdmissao: '10/01/2021', tipoContrato: 'Efectivo', salarioBase: 380000, estado: 'ferias', genero: 'M', dataNascimento: '25/04/1985', endereco: 'Bairro Maculusso, Luanda', supervisor: 'Pedro Alves', nivelEducacao: 'Bacharelato', experienciaAnos: 9 },
@@ -48,28 +50,129 @@ const estadoConfig: Record<string, { label: string; color: string; bg: string }>
 };
 
 export default function FichasFuncionarios() {
+  const { user } = useAuth();
+  const isGestor = user?.role === 'GESTOR';
+  const [gestorDeptVal, setGestorDeptVal] = useState<string>('');
+
+  const [lista, setLista] = useState<FichaFuncionario[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [estadoFilter, setEstadoFilter] = useState('');
   const [selected, setSelected] = useState<FichaFuncionario | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'lista'>('cards');
 
+  useEffect(() => {
+    if (user?.funcionario_id) {
+      api.get(`/funcionarios/${user.funcionario_id}`)
+        .then((emp: any) => {
+          if (emp?.departamento) {
+            setGestorDeptVal(emp.departamento);
+            setDeptFilter(emp.departamento);
+          }
+        })
+        .catch((err) => {
+          console.error('Error fetching gestor department:', err);
+        });
+    }
+  }, [user]);
+
+  const fetchFichas = async () => {
+    try {
+      setIsLoading(true);
+      const [backendFuncs, backendContracts] = await Promise.all([
+        api.get<any[]>('/funcionarios'),
+        api.get<any[]>('/contratos'),
+      ]);
+
+      const mapped: FichaFuncionario[] = backendFuncs.map((f: any) => {
+        const activeContract = backendContracts.find((c: any) => c.funcionario_id === f.id && c.ativo);
+        const salarioBase = activeContract ? activeContract.salario_base : 350000;
+        const tipoContrato = activeContract ? activeContract.tipo : 'Efectivo';
+
+        const formatDate = (dStr: string) => {
+          if (!dStr) return '';
+          const parts = dStr.split('-');
+          return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dStr;
+        };
+
+        const emailLower = f.email ? f.email.toLowerCase() : '';
+        const mockItem = mockFichas.find(item => item.email.toLowerCase() === emailLower);
+
+        let estado: 'ativo' | 'inativo' | 'ferias' | 'licenca' = f.ativo ? 'ativo' : 'inativo';
+        if (mockItem) {
+          if (mockItem.estado === 'ferias' || mockItem.estado === 'licenca') {
+            estado = mockItem.estado;
+          }
+        }
+
+        return {
+          id: `func-${String(f.id).padStart(3, '0')}`,
+          nome: f.nome,
+          foto: mockItem ? mockItem.foto : '',
+          cargo: f.cargo,
+          departamento: f.departamento,
+          email: f.email,
+          telefone: f.telefone,
+          nif: f.nif || f.bi || '',
+          dataAdmissao: formatDate(f.data_admissao),
+          tipoContrato,
+          salarioBase,
+          estado,
+          genero: (f.genero === 'F' || f.genero === 'f') ? 'F' : 'M',
+          dataNascimento: formatDate(f.data_nascimento),
+          endereco: f.endereco || 'Luanda, Angola',
+          supervisor: mockItem ? mockItem.supervisor : 'Manuel Afonso',
+          nivelEducacao: mockItem ? mockItem.nivelEducacao : 'Licenciatura',
+          experienciaAnos: mockItem ? mockItem.experienciaAnos : 5,
+          observacoes: mockItem ? mockItem.observacoes : undefined,
+        };
+      });
+
+      setLista(mapped);
+      setIsDemoMode(false);
+    } catch (error) {
+      console.warn('API error in FichasFuncionarios, falling back to offline demo mode:', error);
+      setLista(mockFichas);
+      setIsDemoMode(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFichas();
+  }, []);
+
   const filtered = useMemo(() => {
-    return fichas.filter((f) => {
+    return lista.filter((f) => {
       const q = search.toLowerCase();
       const matchQ = !q || f.nome.toLowerCase().includes(q) || f.cargo.toLowerCase().includes(q) || f.departamento.toLowerCase().includes(q);
-      const matchDept = !deptFilter || f.departamento === deptFilter;
+      
+      let matchDept = !deptFilter || f.departamento === deptFilter;
+      if (isGestor) {
+        const deptVal = gestorDeptVal || 'Operações';
+        matchDept = f.departamento === deptVal;
+      }
+
       const matchEstado = !estadoFilter || f.estado === estadoFilter;
       return matchQ && matchDept && matchEstado;
     });
-  }, [search, deptFilter, estadoFilter]);
+  }, [lista, search, deptFilter, estadoFilter, isGestor, gestorDeptVal]);
 
-  const departments = [...new Set(fichas.map((f) => f.departamento))];
+  const departments = useMemo(() => {
+    return [...new Set(lista.map((f) => f.departamento))];
+  }, [lista]);
 
   const getInitials = (nome: string) => nome.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase();
 
   const avatarColors = ['bg-primary', 'bg-success', 'bg-warning', 'bg-info', 'bg-danger'];
-  const getAvatarColor = (id: string) => avatarColors[parseInt(id.replace('func-', '')) % avatarColors.length];
+  const getAvatarColor = (id: string) => {
+    const numericPart = parseInt(id.replace('func-', ''), 10);
+    const index = isNaN(numericPart) ? 0 : numericPart;
+    return avatarColors[index % avatarColors.length];
+  };
 
   return (
     <div>
@@ -85,14 +188,16 @@ export default function FichasFuncionarios() {
             className="w-full pl-9 pr-3 py-2.5 text-sm bg-card border border-border rounded-lg outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 text-foreground placeholder:text-muted-foreground"
           />
         </div>
-        <select
-          value={deptFilter}
-          onChange={(e) => setDeptFilter(e.target.value)}
-          className="px-3 py-2.5 text-sm bg-card border border-border rounded-lg outline-none focus:border-primary text-foreground"
-        >
-          <option value="">Todos os departamentos</option>
-          {departments.map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
+        {!isGestor && (
+          <select
+            value={deptFilter}
+            onChange={(e) => setDeptFilter(e.target.value)}
+            className="px-3 py-2.5 text-sm bg-card border border-border rounded-lg outline-none focus:border-primary text-foreground"
+          >
+            <option value="">Todos os departamentos</option>
+            {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        )}
         <select
           value={estadoFilter}
           onChange={(e) => setEstadoFilter(e.target.value)}
@@ -120,7 +225,32 @@ export default function FichasFuncionarios() {
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground mb-4">{filtered.length} ficha{filtered.length !== 1 ? 's' : ''} encontrada{filtered.length !== 1 ? 's' : ''}</p>
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <p className="text-xs text-muted-foreground">
+          {isLoading ? 'A carregar...' : `${filtered.length} ficha${filtered.length !== 1 ? 's' : ''} encontrada${filtered.length !== 1 ? 's' : ''}`}
+        </p>
+        {isDemoMode && (
+          <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-600 uppercase px-2 py-0.5 rounded-full select-none">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            Demo Mode
+          </span>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="py-20 text-center text-muted-foreground bg-card border border-border rounded-xl">
+          <div className="flex flex-col items-center gap-3">
+            <Icon name="ArrowPathIcon" size={24} className="animate-spin text-primary" />
+            <span className="text-sm font-500 text-foreground">A carregar fichas de funcionários...</span>
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="py-12 text-center text-muted-foreground bg-card border border-border rounded-xl">
+          Nenhuma ficha de funcionário encontrada com os filtros aplicados.
+        </div>
+      ) : (
+        <>
+          {/* Cards or list views will go here, handled below */}
 
       {/* Cards View */}
       {viewMode === 'cards' && (
@@ -221,6 +351,8 @@ export default function FichasFuncionarios() {
             </table>
           </div>
         </div>
+      )}
+        </>
       )}
 
       {/* Profile Modal */}

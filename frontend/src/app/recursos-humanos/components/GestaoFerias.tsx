@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/AppIcon';
 import Modal from '@/components/ui/Modal';
+import { useAuth } from '@/context/AuthContext';
+import { api } from '@/lib/api';
+
 
 type EstadoPedido = 'pendente' | 'aprovado' | 'rejeitado' | 'em_curso';
 type TipoAusencia = 'ferias' | 'licenca_medica' | 'licenca_maternidade' | 'licenca_paternidade' | 'falta_justificada' | 'falta_injustificada';
@@ -50,35 +53,153 @@ const estadoConfig: Record<EstadoPedido, { label: string; color: string; bg: str
 };
 
 export default function GestaoFerias() {
-  const [lista, setLista] = useState<PedidoAusencia[]>(pedidos);
+  const { user } = useAuth();
+  const isGestor = user?.role === 'GESTOR';
+  const [gestorDeptVal, setGestorDeptVal] = useState<string>('');
+
+  const [lista, setLista] = useState<PedidoAusencia[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [filtroEstado, setFiltroEstado] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('');
   const [selected, setSelected] = useState<PedidoAusencia | null>(null);
   const [confirmAction, setConfirmAction] = useState<{ pedido: PedidoAusencia; acao: 'aprovar' | 'rejeitar' } | null>(null);
 
-  const filtered = lista.filter((p) => {
+  useEffect(() => {
+    if (user?.funcionario_id) {
+      api.get(`/funcionarios/${user.funcionario_id}`)
+        .then((emp: any) => {
+          if (emp?.departamento) {
+            setGestorDeptVal(emp.departamento);
+          }
+        })
+        .catch((err) => {
+          console.error('Error fetching gestor department:', err);
+        });
+    }
+  }, [user]);
+
+  const fetchFeriasData = async () => {
+    try {
+      setIsLoading(true);
+      const [backendFerias, backendFuncs] = await Promise.all([
+        api.get<any[]>('/ferias'),
+        api.get<any[]>('/funcionarios'),
+      ]);
+
+      const mapped: PedidoAusencia[] = backendFerias.map((f: any) => {
+        const emp = backendFuncs.find((e: any) => e.id === f.funcionario_id);
+        
+        const formatDate = (dStr: string) => {
+          if (!dStr) return '';
+          const parts = dStr.split('-');
+          return parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dStr;
+        };
+
+        let estado: EstadoPedido = 'pendente';
+        if (f.status === 'Aprovado') estado = 'aprovado';
+        else if (f.status === 'Rejeitado') estado = 'rejeitado';
+        else if (f.status === 'Pendente') estado = 'pendente';
+        else if (f.status === 'Em Curso') estado = 'em_curso';
+
+        return {
+          id: `aus-${String(f.id).padStart(3, '0')}`,
+          funcionario: emp ? emp.nome : `Funcionário ID ${f.funcionario_id}`,
+          departamento: emp ? emp.departamento : 'Geral',
+          tipo: 'ferias',
+          dataInicio: formatDate(f.data_inicio),
+          dataFim: formatDate(f.data_fim),
+          diasUteis: f.dias_gozados || 10,
+          estado,
+          motivo: f.observacoes || 'Férias anuais',
+          dataSubmissao: f.created_at ? new Date(f.created_at).toLocaleDateString('pt-AO') : '22/05/2026',
+        };
+      });
+
+      const nonFeriasMocks = pedidos.filter(p => p.tipo !== 'ferias');
+      setLista([...mapped, ...nonFeriasMocks]);
+      setIsDemoMode(false);
+    } catch (error) {
+      console.warn('API error, falling back to offline demo mode:', error);
+      setLista(pedidos);
+      setIsDemoMode(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFeriasData();
+  }, []);
+
+  const scopedLista = lista.filter((p) => {
+    if (isGestor) {
+      const deptFilter = gestorDeptVal || 'Operações';
+      return p.departamento === deptFilter;
+    }
+    return true;
+  });
+
+  const filtered = scopedLista.filter((p) => {
     const matchEstado = !filtroEstado || p.estado === filtroEstado;
     const matchTipo = !filtroTipo || p.tipo === filtroTipo;
     return matchEstado && matchTipo;
   });
 
-  const pendentes = lista.filter((p) => p.estado === 'pendente').length;
-  const aprovados = lista.filter((p) => p.estado === 'aprovado').length;
-  const emCurso = lista.filter((p) => p.estado === 'em_curso').length;
+  const pendentes = scopedLista.filter((p) => p.estado === 'pendente').length;
+  const aprovados = scopedLista.filter((p) => p.estado === 'aprovado').length;
+  const emCurso = scopedLista.filter((p) => p.estado === 'em_curso').length;
 
-  const handleAprovar = (pedido: PedidoAusencia) => {
-    setLista((prev) => prev.map((p) => p.id === pedido.id ? { ...p, estado: 'aprovado', aprovadoPor: 'Beatriz Matos' } : p));
-    toast.success(`Pedido de ${pedido.funcionario} aprovado.`);
-    setConfirmAction(null);
-    setSelected(null);
+  const handleAprovar = async (pedido: PedidoAusencia) => {
+    if (isDemoMode || !pedido.id.startsWith('aus-') || parseInt(pedido.id.replace('aus-', ''), 10) > 100) {
+      setLista((prev) => prev.map((p) => p.id === pedido.id ? { ...p, estado: 'aprovado', aprovadoPor: 'Beatriz Matos' } : p));
+      toast.success(`Pedido de ${pedido.funcionario} aprovado.`);
+      setConfirmAction(null);
+      setSelected(null);
+      return;
+    }
+
+    try {
+      const backendId = parseInt(pedido.id.replace('aus-', ''), 10);
+      await api.put(`/ferias/${backendId}`, {
+        status: 'Aprovado'
+      });
+      toast.success(`Pedido de ${pedido.funcionario} aprovado.`);
+      await fetchFeriasData();
+    } catch (err: any) {
+      console.error('Error approving vacation:', err);
+      toast.error(err.message || 'Erro ao aprovar férias.');
+    } finally {
+      setConfirmAction(null);
+      setSelected(null);
+    }
   };
 
-  const handleRejeitar = (pedido: PedidoAusencia) => {
-    setLista((prev) => prev.map((p) => p.id === pedido.id ? { ...p, estado: 'rejeitado', aprovadoPor: 'Beatriz Matos' } : p));
-    toast.error(`Pedido de ${pedido.funcionario} rejeitado.`);
-    setConfirmAction(null);
-    setSelected(null);
+  const handleRejeitar = async (pedido: PedidoAusencia) => {
+    if (isDemoMode || !pedido.id.startsWith('aus-') || parseInt(pedido.id.replace('aus-', ''), 10) > 100) {
+      setLista((prev) => prev.map((p) => p.id === pedido.id ? { ...p, estado: 'rejeitado', aprovadoPor: 'Beatriz Matos' } : p));
+      toast.error(`Pedido de ${pedido.funcionario} rejeitado.`);
+      setConfirmAction(null);
+      setSelected(null);
+      return;
+    }
+
+    try {
+      const backendId = parseInt(pedido.id.replace('aus-', ''), 10);
+      await api.put(`/ferias/${backendId}`, {
+        status: 'Rejeitado'
+      });
+      toast.error(`Pedido de ${pedido.funcionario} rejeitado.`);
+      await fetchFeriasData();
+    } catch (err: any) {
+      console.error('Error rejecting vacation:', err);
+      toast.error(err.message || 'Erro ao rejeitar férias.');
+    } finally {
+      setConfirmAction(null);
+      setSelected(null);
+    }
   };
+
 
   return (
     <div>
@@ -88,7 +209,7 @@ export default function GestaoFerias() {
           { label: 'Pendentes', value: pendentes, color: 'text-warning', bg: 'bg-warning/10', icon: 'ClockIcon' },
           { label: 'Aprovados', value: aprovados, color: 'text-success', bg: 'bg-success/10', icon: 'CheckCircleIcon' },
           { label: 'Em Curso', value: emCurso, color: 'text-info', bg: 'bg-info/10', icon: 'ArrowPathIcon' },
-          { label: 'Total', value: lista.length, color: 'text-primary', bg: 'bg-primary/10', icon: 'CalendarDaysIcon' },
+          { label: 'Total', value: scopedLista.length, color: 'text-primary', bg: 'bg-primary/10', icon: 'CalendarDaysIcon' },
         ].map((s) => (
           <div key={s.label} className="bg-card border border-border rounded-xl p-4 shadow-card">
             <div className={['w-8 h-8 rounded-lg flex items-center justify-center mb-2', s.bg].join(' ')}>
@@ -152,7 +273,22 @@ export default function GestaoFerias() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filtered.map((pedido) => {
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="py-16 text-center text-muted-foreground">
+                    <div className="flex flex-col items-center gap-3">
+                      <Icon name="ArrowPathIcon" size={24} className="animate-spin text-primary" />
+                      <span className="text-sm font-500 text-foreground">A carregar férias e ausências...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                    Nenhum pedido de férias ou ausência registado.
+                  </td>
+                </tr>
+              ) : filtered.map((pedido) => {
                 const tipo = tipoConfig[pedido.tipo];
                 const estado = estadoConfig[pedido.estado];
                 return (
