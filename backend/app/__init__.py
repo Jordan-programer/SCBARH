@@ -1,1 +1,0 @@
-# SCBARH Backend App package
