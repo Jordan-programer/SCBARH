@@ -60,7 +60,7 @@ export default function SignUpLoginPage() {
             Controlo Biométrico<br />de Assiduidade
           </h1>
           <p className="text-white/70 text-sm leading-relaxed mb-6">
-            Automatize o registo de presença, controlo de assiduidade e processamento salarial
+            Automatização do registo de presença, controlo de assiduidade e processamento salarial
             com autenticação biométrica de alta precisão.
           </p>
 
@@ -68,7 +68,7 @@ export default function SignUpLoginPage() {
             {[
               { label: 'Leitura biométrica', value: '< 3 seg' },
               { label: 'Disponibilidade', value: '99%' },
-              { label: 'Funcionários suportados', value: '5.000+' },
+              { label: 'Funcionários suportados', value: '2.000' },
               { label: 'Precisão biométrica', value: '99.8%' },
             ]?.map((stat) => (
               <div key={`stat-${stat?.label}`} className="bg-white/10 rounded-lg p-3">
@@ -77,13 +77,6 @@ export default function SignUpLoginPage() {
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Footer */}
-        <div className="relative">
-          <p className="text-white/40 text-[11px]">
-            © 2026 SCBARH — Grupo 01 · Estágio Profissional
-          </p>
         </div>
       </div>
       {/* Right form panel */}

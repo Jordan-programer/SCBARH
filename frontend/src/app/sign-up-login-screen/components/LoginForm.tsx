@@ -245,6 +245,84 @@ export default function LoginForm() {
         </button>
       </form>
 
+      {/* Secção de Credenciais de Demonstração / Teste */}
+      <div className="mt-8 pt-6 border-t border-border/80">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-700 text-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <Icon name="SparklesIcon" size={13} className="text-primary animate-pulse" />
+            Acesso de Teste & Demo
+          </h3>
+          <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full font-500">
+            Clique para Preencher
+          </span>
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {demoCredentials.map((cred) => {
+            const isCopiedEmail = copiedField === `${cred.email}-email`;
+            const isCopiedPass = copiedField === `${cred.email}-pass`;
+            const isRealBD = cred.role.includes('Real BD');
+            
+            return (
+              <div
+                key={cred.email}
+                onClick={() => autofill(cred)}
+                className={[
+                  'group relative p-3 rounded-xl border transition-all duration-200 cursor-pointer select-none text-left',
+                  isRealBD 
+                    ? 'bg-primary/5 hover:bg-primary/10 border-primary/20 hover:border-primary/40' 
+                    : 'bg-card hover:bg-muted/50 border-border hover:border-border-hover'
+                ].join(' ')}
+              >
+                {/* Role badge */}
+                <div className="flex justify-between items-start gap-1 mb-1">
+                  <span className={[
+                    'text-[10px] font-700 px-1.5 py-0.5 rounded',
+                    isRealBD ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                  ].join(' ')}>
+                    {cred.role}
+                  </span>
+                  
+                  {/* Clipboard copy actions */}
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      title="Copiar E-mail"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyToClipboard(cred.email, `${cred.email}-email`);
+                      }}
+                      className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-background transition-all"
+                    >
+                      <Icon name={isCopiedEmail ? 'CheckIcon' : 'EnvelopeIcon'} size={11} className={isCopiedEmail ? 'text-success' : ''} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Copiar Palavra-passe"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyToClipboard(cred.password, `${cred.email}-pass`);
+                      }}
+                      className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-background transition-all"
+                    >
+                      <Icon name={isCopiedPass ? 'CheckIcon' : 'KeyIcon'} size={11} className={isCopiedPass ? 'text-success' : ''} />
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-xs font-600 text-foreground truncate">{cred.email}</p>
+                <div className="flex items-center gap-1 mt-1 text-[11px] text-muted-foreground font-mono">
+                  <span>Senha:</span>
+                  <span className="bg-background px-1.5 py-0.5 rounded border border-border/40 group-hover:border-border transition-colors">
+                    {cred.password}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <p className="text-center text-xs text-muted-foreground mt-6">
         Problemas de acesso?{' '}
         <Link href="/administrative-dashboard" className="text-primary font-500 hover:underline">

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import Icon from '@/components/ui/AppIcon';
 import { toast, Toaster } from 'sonner';
+import { api } from '@/lib/api';
 
 interface TerminalBiometrico {
   id: string;
@@ -30,6 +31,7 @@ const terminaisIniciais: TerminalBiometrico[] = [
   { id: 'term-002', nome: 'ZKTeco ProFace B', localizacao: 'Entrada Administrativa B', ip: '192.168.10.46', estado: 'Online', versaoFirmware: 'v4.12-Z', ultimaSincronizacao: '22 Mai 2026, 08:31', temperatura: 35.4 },
   { id: 'term-003', nome: 'SpeedFace V5L', localizacao: 'Acesso Refeitório', ip: '192.168.10.50', estado: 'Online', versaoFirmware: 'v3.8-S', ultimaSincronizacao: '22 Mai 2026, 08:00', temperatura: 38.1 },
   { id: 'term-004', nome: 'Terminal Biométrico Servidores', localizacao: 'Sala de Servidores TI', ip: '192.168.20.12', estado: 'Offline', versaoFirmware: 'v2.1-SRV', ultimaSincronizacao: '21 Mai 2026, 18:45', temperatura: 0 },
+  { id: 'term-005', nome: 'Realand A-C121', localizacao: 'Entrada Recepção', ip: '192.168.10.225', estado: 'Online', versaoFirmware: 'v1.2-R', ultimaSincronizacao: '22 Mai 2026, 08:35', temperatura: 34.8 },
 ];
 
 const logsIniciais: BiometricLog[] = [
@@ -44,6 +46,87 @@ export default function DispositivosBiometricosPage() {
   const [terminais, setTerminais] = useState<TerminalBiometrico[]>(terminaisIniciais);
   const [logs, setLogs] = useState<BiometricLog[]>(logsIniciais);
   const [sincronizando, setSincronizando] = useState(false);
+
+  // Estados específicos para integração Realand A-C121
+  const [isRealandModalOpen, setIsRealandModalOpen] = useState(false);
+  const [realandIp, setRealandIp] = useState('192.168.10.225');
+  const [realandPort, setRealandPort] = useState(5500);
+  const [realandDeviceId, setRealandDeviceId] = useState(3);
+  const [realandCommKey, setRealandCommKey] = useState('12345');
+  const [isPinging, setIsPinging] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isPulling, setIsPulling] = useState(false);
+  const [pingResult, setPingResult] = useState<any>(null);
+
+  const handleRealandPing = async () => {
+    setIsPinging(true);
+    setPingResult(null);
+    try {
+      const res: any = await api.post('/biometria/ping', {
+        ip: realandIp,
+        port: realandPort,
+        device_id: realandDeviceId,
+        comm_key: realandCommKey
+      });
+      setPingResult(res);
+      if (res.status === 'success') {
+        toast.success(`Ligação estabelecida! (${res.mode === 'emulated' ? 'Modo Emulação' : 'Socket Real'})`);
+      } else {
+        toast.error('Erro na ligação.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao comunicar com o servidor.');
+    } finally {
+      setIsPinging(false);
+    }
+  };
+
+  const handleRealandSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res: any = await api.post('/biometria/sincronizar-usuarios', {
+        ip: realandIp,
+        port: realandPort,
+        device_id: realandDeviceId,
+        comm_key: realandCommKey
+      });
+      if (res.status === 'success') {
+        toast.success(res.message);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao sincronizar.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleRealandPullLogs = async () => {
+    setIsPulling(true);
+    try {
+      const res: any = await api.post('/biometria/puxar-logs', {
+        ip: realandIp,
+        port: realandPort,
+        device_id: realandDeviceId,
+        comm_key: realandCommKey
+      });
+      if (res.status === 'success') {
+        // Adicionar novos logs puxados à lista
+        const newLogs = res.logs.map((l: any) => ({
+          id: l.id,
+          terminal: l.terminal,
+          funcionario: l.funcionario,
+          dataHora: l.dataHora,
+          resultado: l.resultado
+        }));
+        setLogs(prev => [...newLogs, ...prev]);
+        toast.success(`${res.pulled_count} novas batidas biométricas importadas com sucesso!`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao puxar logs.');
+    } finally {
+      setIsPulling(false);
+    }
+  };
 
   const handleReboot = async (id: string, nome: string) => {
     setTerminais(prev =>
@@ -198,11 +281,14 @@ export default function DispositivosBiometricosPage() {
                       Reiniciar Terminal
                     </button>
                     <button 
-                      onClick={() => toast.info(`A puxar logs detalhados para o terminal ${t.nome}...`)}
+                      onClick={() => t.nome === 'Realand A-C121' ? setIsRealandModalOpen(true) : toast.info(`A puxar logs detalhados para o terminal ${t.nome}...`)}
                       disabled={t.estado === 'Offline'}
-                      className="text-[11px] font-600 border border-border hover:bg-muted text-foreground px-3 py-2 rounded-lg transition-all disabled:opacity-50"
+                      className={[
+                        'text-[11px] font-600 px-3 py-2 rounded-lg transition-all disabled:opacity-50 border border-border hover:bg-muted text-foreground',
+                        t.nome === 'Realand A-C121' ? 'bg-primary/10 text-primary border-primary/20 hover:bg-primary/20' : ''
+                      ].join(' ')}
                     >
-                      Testar Conexão
+                      {t.nome === 'Realand A-C121' ? 'Configurar TCP/IP' : 'Testar Conexão'}
                     </button>
                   </div>
                 </div>
@@ -258,6 +344,197 @@ export default function DispositivosBiometricosPage() {
         </div>
 
       </div>
+
+      {/* Modal Realand A-C121 TCP/IP Connection */}
+      {isRealandModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm" 
+            onClick={() => setIsRealandModalOpen(false)}
+          />
+          <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl relative z-10 overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="bg-primary/5 px-6 py-4 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                  <Icon name="FingerPrintIcon" size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-700 text-foreground">Terminal Realand A-C121</h3>
+                  <p className="text-[10px] text-muted-foreground">Painel de Ligação de Hardware Sockets TCP/IP</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsRealandModalOpen(false)}
+                className="text-muted-foreground hover:text-foreground p-1.5 rounded-lg hover:bg-muted transition-all"
+              >
+                <Icon name="XMarkIcon" size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-5">
+              {/* Photo representation */}
+              <div className="flex items-center gap-4 bg-muted/10 border border-border rounded-xl p-4">
+                <div className="bg-muted border border-border w-24 h-16 rounded-lg flex flex-col items-center justify-center relative overflow-hidden flex-shrink-0">
+                  <Icon name="CpuChipIcon" size={24} className="text-primary/70 animate-pulse" />
+                  <span className="absolute bottom-1 right-1.5 text-[8px] font-800 text-muted-foreground uppercase">Realand</span>
+                </div>
+                <div className="space-y-0.5">
+                  <span className="text-[9px] font-700 uppercase bg-success/15 text-success px-1.5 py-0.5 rounded">A-C121 Online</span>
+                  <h4 className="text-xs font-700 text-foreground">Realand Attendance Terminal</h4>
+                  <p className="text-[10px] text-muted-foreground leading-normal">
+                    Ligação TCP/IP direta ao terminal. IP: <strong className="text-foreground font-tabular">192.168.10.225</strong> · Porta: <strong className="text-foreground font-tabular">5500</strong> · Device ID: <strong className="text-foreground">3</strong>
+                  </p>
+                </div>
+              </div>
+
+              {/* Form Settings */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-600 text-muted-foreground mb-1">Endereço IP (Leitor Físico)</label>
+                  <input 
+                    type="text" 
+                    value={realandIp}
+                    onChange={(e) => setRealandIp(e.target.value)}
+                    className="w-full text-xs font-tabular font-600 bg-input border border-border rounded-lg px-3 py-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all text-foreground animate-none"
+                    placeholder="192.168.10.225"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-600 text-muted-foreground mb-1">Porta TCP</label>
+                  <input 
+                    type="number" 
+                    value={realandPort}
+                    onChange={(e) => setRealandPort(parseInt(e.target.value) || 5500)}
+                    className="w-full text-xs font-tabular font-600 bg-input border border-border rounded-lg px-3 py-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all text-foreground animate-none"
+                    placeholder="5500"
+                  />
+                </div>
+              </div>
+
+              {/* Advanced settings row */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-600 text-muted-foreground mb-1">ID do Equipamento (Device ID)</label>
+                  <input 
+                    type="number" 
+                    value={realandDeviceId}
+                    onChange={(e) => setRealandDeviceId(parseInt(e.target.value) || 3)}
+                    className="w-full text-xs font-tabular bg-input border border-border rounded-lg px-3 py-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all text-foreground"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-600 text-muted-foreground mb-1">Comm Key (Senha de Rede)</label>
+                  <input 
+                    type="text"
+                    value={realandCommKey}
+                    onChange={(e) => setRealandCommKey(e.target.value)}
+                    className="w-full text-xs font-tabular bg-input border border-border rounded-lg px-3 py-2 outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all text-foreground"
+                    placeholder="12345"
+                  />
+                </div>
+              </div>
+
+              {/* Connection test result panel */}
+              {pingResult && (
+                <div className={['border rounded-xl p-4 space-y-2 text-xs', pingResult.mode === 'emulated' ? 'bg-info/5 border-info/20' : 'bg-success/5 border-success/20'].join(' ')}>
+                  <div className="flex items-center justify-between font-700">
+                    <span className="flex items-center gap-1.5">
+                      <span className={['w-1.5 h-1.5 rounded-full inline-block animate-pulse', pingResult.mode === 'emulated' ? 'bg-info' : 'bg-success'].join(' ')} />
+                      Estado: Conectado ({pingResult.mode === 'emulated' ? 'Modo Emulação' : 'Socket Real'})
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">SN: {pingResult.device.serial_number}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground pt-1.5 border-t border-border/40">
+                    <div>Funcionários na memória: <strong className="text-foreground">{pingResult.device.users_count}</strong></div>
+                    <div>Biometrias registadas: <strong className="text-foreground">{pingResult.device.fingerprints_count}</strong></div>
+                    <div>Registos de ponto pendentes: <strong className="text-foreground">{pingResult.device.logs_count}</strong></div>
+                    <div>Temp. CPU: <strong className="text-foreground">{pingResult.device.temperature}°C</strong></div>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions row */}
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={handleRealandPing}
+                  disabled={isPinging || isSyncing || isPulling}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-border bg-card font-600 hover:bg-muted text-foreground py-2.5 rounded-lg transition-all active:scale-[0.98] disabled:opacity-50 text-xs"
+                >
+                  {isPinging ? (
+                    <>
+                      <Icon name="ArrowPathIcon" size={14} className="animate-spin" />
+                      <span>A testar...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="ShieldCheckIcon" size={14} />
+                      <span>Testar Conexão</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRealandSync}
+                  disabled={isPinging || isSyncing || isPulling}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-border bg-card font-600 hover:bg-muted text-foreground py-2.5 rounded-lg transition-all active:scale-[0.98] disabled:opacity-50 text-xs"
+                >
+                  {isSyncing ? (
+                    <>
+                      <Icon name="ArrowPathIcon" size={14} className="animate-spin" />
+                      <span>A sincronizar...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="UserPlusIcon" size={14} />
+                      <span>Sincronizar Utilizadores</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="border-t border-border/60 pt-4">
+                <button
+                  type="button"
+                  onClick={handleRealandPullLogs}
+                  disabled={isPinging || isSyncing || isPulling}
+                  className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-600 hover:bg-primary/90 py-2.5 rounded-lg transition-all active:scale-[0.98] disabled:opacity-50 text-xs shadow-sm"
+                >
+                  {isPulling ? (
+                    <>
+                      <Icon name="ArrowPathIcon" size={14} className="animate-spin" />
+                      <span>A descarregar registos...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="ArrowDownTrayIcon" size={14} />
+                      <span>Importar Batidas de Ponto Pendentes (Pull)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+
+            {/* Diagnostic instructions footer */}
+            <div className="bg-muted/30 px-6 py-4 border-t border-border text-[10px] text-muted-foreground leading-relaxed space-y-1">
+              <p><strong className="text-foreground">Configuração actual do dispositivo físico:</strong></p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-tabular mt-1">
+                <span>IP: <strong className="text-foreground">192.168.10.225</strong></span>
+                <span>Porta: <strong className="text-foreground">5500</strong></span>
+                <span>Device ID: <strong className="text-foreground">3</strong></span>
+                <span>Comm Key: <strong className="text-foreground">12345</strong></span>
+                <span>Gateway: <strong className="text-foreground">192.168.10.0</strong></span>
+                <span>Máscara: <strong className="text-foreground">255.255.252.0</strong></span>
+              </div>
+              <p className="pt-1">No terminal físico: <span className="font-600 text-foreground">Menu → Comm. → Network</span></p>
+            </div>
+
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
